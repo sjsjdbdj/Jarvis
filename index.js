@@ -5,39 +5,14 @@ const {
 } = require('@whiskeysockets/baileys')
 
 const axios = require('axios')
-const express = require('express')
 
-// 🔑 API KEY (desde Render)
+// 🔑 OpenRouter
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
 
-// 🌐 Servidor web para mostrar QR
-const app = express()
-const PORT = process.env.PORT || 3000
-let lastQR = null
+// 📞 TU NÚMERO (CON CÓDIGO PAÍS, SIN + NI ESPACIOS)
+const PHONE_NUMBER = process.env.PHONE_NUMBER // ej: 5491123456789
 
-app.get('/', (req, res) => {
-  res.send('🤖 Bot activo. Ve a /qr para escanear el QR')
-})
-
-app.get('/qr', (req, res) => {
-  if (!lastQR) {
-    return res.send('❌ QR no generado aún. Espera unos segundos.')
-  }
-
-  res.send(`
-    <html>
-      <body style="display:flex;justify-content:center;align-items:center;height:100vh;">
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${lastQR}" />
-      </body>
-    </html>
-  `)
-})
-
-app.listen(PORT, () => {
-  console.log('🌐 Servidor web activo en puerto', PORT)
-})
-
-// 🔹 FUNCIÓN PARA EXTRAER TEXTO
+// 🔹 Extraer texto
 function getMessageText(msg) {
   if (!msg.message) return null
 
@@ -50,7 +25,7 @@ function getMessageText(msg) {
   )
 }
 
-// 🤖 FUNCIÓN IA (OpenRouter)
+// 🤖 IA
 async function askAI(prompt) {
   try {
     const response = await axios.post(
@@ -71,9 +46,9 @@ async function askAI(prompt) {
     )
 
     return response.data.choices[0].message.content
-  } catch (error) {
-    console.error('❌ Error IA:', error.response?.data || error.message)
-    return 'Ocurrió un error con la IA.'
+  } catch (err) {
+    console.error('❌ Error IA:', err.message)
+    return 'Error con la IA.'
   }
 }
 
@@ -82,29 +57,23 @@ async function startBot() {
 
   const sock = makeWASocket({
     auth: state,
-    browser: ['Bot IA', 'Chrome', '1.0']
+    browser: ['Bot IA', 'Chrome', '1.0'],
+    printQRInTerminal: false
   })
 
-  // 💾 Guardar sesión
   sock.ev.on('creds.update', saveCreds)
 
-  // 🔌 Conexión y QR
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update
-
-    if (qr) {
-      lastQR = qr
-      console.log('🔗 QR generado → abre /qr en el navegador')
-    }
+  // 🔌 CONEXIÓN
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect } = update
 
     if (connection === 'open') {
-      lastQR = null
       console.log('✅ Conectado a WhatsApp')
     }
 
     if (connection === 'close') {
       const reason = lastDisconnect?.error?.output?.statusCode
-      console.log('❌ Conexión cerrada. Razón:', reason)
+      console.log('❌ Conexión cerrada:', reason)
 
       if (reason !== DisconnectReason.loggedOut) {
         startBot()
@@ -112,7 +81,18 @@ async function startBot() {
     }
   })
 
-  // 📩 Mensajes
+  // 🔑 GENERAR CÓDIGO DE EMPAREJAMIENTO
+  if (!sock.authState.creds.registered) {
+    try {
+      const code = await sock.requestPairingCode(PHONE_NUMBER)
+      console.log('📲 Código de vinculación:', code)
+      console.log('👉 WhatsApp → Dispositivos vinculados → Vincular con número')
+    } catch (err) {
+      console.error('❌ Error generando código:', err.message)
+    }
+  }
+
+  // 📩 MENSAJES
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0]
     if (!msg.message || msg.key.fromMe) return
