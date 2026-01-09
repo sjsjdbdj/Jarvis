@@ -8,7 +8,7 @@ const axios = require('axios')
 
 // ⚠️ SOLO PARA PRUEBAS LOCALES – NO SUBIR A GITHUB
 const OPENROUTER_API_KEY = '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'
-const PHONE_NUMBER = '513008506213' // ej: 57300xxxxxxx
+const PHONE_NUMBER = '573008506213' // ej: 57300xxxxxxx
 
 function getMessageText(msg) {
   if (!msg.message) return null
@@ -184,3 +184,4 @@ async function startBot() {
 }
 
 startBot()
+
