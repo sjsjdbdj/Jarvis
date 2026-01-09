@@ -4,13 +4,40 @@ const {
   DisconnectReason
 } = require('@whiskeysockets/baileys')
 
-const qrcode = require('qrcode-terminal')
 const axios = require('axios')
+const express = require('express')
 
-// 🔑 TU API KEY DE OPENROUTER
+// 🔑 API KEY (desde Render)
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
 
-// 🔹 FUNCIÓN PARA EXTRAER TEXTO DEL MENSAJE
+// 🌐 Servidor web para mostrar QR
+const app = express()
+const PORT = process.env.PORT || 3000
+let lastQR = null
+
+app.get('/', (req, res) => {
+  res.send('🤖 Bot activo. Ve a /qr para escanear el QR')
+})
+
+app.get('/qr', (req, res) => {
+  if (!lastQR) {
+    return res.send('❌ QR no generado aún. Espera unos segundos.')
+  }
+
+  res.send(`
+    <html>
+      <body style="display:flex;justify-content:center;align-items:center;height:100vh;">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${lastQR}" />
+      </body>
+    </html>
+  `)
+})
+
+app.listen(PORT, () => {
+  console.log('🌐 Servidor web activo en puerto', PORT)
+})
+
+// 🔹 FUNCIÓN PARA EXTRAER TEXTO
 function getMessageText(msg) {
   if (!msg.message) return null
 
@@ -31,14 +58,8 @@ async function askAI(prompt) {
       {
         model: 'openai/gpt-4.1-mini',
         messages: [
-          {
-            role: 'system',
-            content: 'Eres un asistente útil, claro y respondes en español.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
+          { role: 'system', content: 'Eres un asistente útil y respondes en español.' },
+          { role: 'user', content: prompt }
         ]
       },
       {
@@ -52,7 +73,7 @@ async function askAI(prompt) {
     return response.data.choices[0].message.content
   } catch (error) {
     console.error('❌ Error IA:', error.response?.data || error.message)
-    return 'Lo siento, ocurrió un error con la IA.'
+    return 'Ocurrió un error con la IA.'
   }
 }
 
@@ -64,19 +85,20 @@ async function startBot() {
     browser: ['Bot IA', 'Chrome', '1.0']
   })
 
-  // 💾 Guardar credenciales
+  // 💾 Guardar sesión
   sock.ev.on('creds.update', saveCreds)
 
-  // 🔌 CONEXIÓN Y QR
+  // 🔌 Conexión y QR
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update
 
     if (qr) {
-      console.log('📱 Escanea este QR con WhatsApp:')
-      qrcode.generate(qr, { small: true })
+      lastQR = qr
+      console.log('🔗 QR generado → abre /qr en el navegador')
     }
 
     if (connection === 'open') {
+      lastQR = null
       console.log('✅ Conectado a WhatsApp')
     }
 
@@ -90,11 +112,10 @@ async function startBot() {
     }
   })
 
-  // 📩 MENSAJES + IA
+  // 📩 Mensajes
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0]
-    if (!msg.message) return
-    if (msg.key.fromMe) return
+    if (!msg.message || msg.key.fromMe) return
 
     const from = msg.key.remoteJid
     const text = getMessageText(msg)
@@ -102,11 +123,8 @@ async function startBot() {
 
     console.log(`📩 ${from}: ${text}`)
 
-    // ⌨️ Indicador "escribiendo"
     await sock.sendPresenceUpdate('composing', from)
-
     const reply = await askAI(text)
-
     await sock.sendMessage(from, { text: reply })
   })
 }
