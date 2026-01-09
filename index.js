@@ -6,16 +6,12 @@ const {
 
 const axios = require('axios')
 
-// 🔑 OpenRouter
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
+// ⚠️ SOLO PARA PRUEBAS LOCALES – NO SUBIR A GITHUB
+const OPENROUTER_API_KEY = 'PON_AQUI_TU_API_KEY'
+const PHONE_NUMBER = 'CODIGO_PAIS_NUMERO' // ej: 57300xxxxxxx
 
-// 📞 TU NÚMERO (CON CÓDIGO PAÍS, SIN + NI ESPACIOS)
-const PHONE_NUMBER = process.env.PHONE_NUMBER // ej: 5491123456789
-
-// 🔹 Extraer texto
 function getMessageText(msg) {
   if (!msg.message) return null
-
   return (
     msg.message.conversation ||
     msg.message.extendedTextMessage?.text ||
@@ -25,7 +21,6 @@ function getMessageText(msg) {
   )
 }
 
-// 🤖 IA
 async function askAI(prompt) {
   try {
     const response = await axios.post(
@@ -33,7 +28,7 @@ async function askAI(prompt) {
       {
         model: 'openai/gpt-4.1-mini',
         messages: [
-          { role: 'system', content: 'Eres un asistente útil y respondes en español.' },
+          { role: 'system', content: 'Respondes en español.' },
           { role: 'user', content: prompt }
         ]
       },
@@ -46,9 +41,9 @@ async function askAI(prompt) {
     )
 
     return response.data.choices[0].message.content
-  } catch (err) {
-    console.error('❌ Error IA:', err.message)
-    return 'Error con la IA.'
+  } catch (e) {
+    console.error('❌ Error IA:', e.message)
+    return 'Error con la IA'
   }
 }
 
@@ -63,36 +58,25 @@ async function startBot() {
 
   sock.ev.on('creds.update', saveCreds)
 
-  // 🔌 CONEXIÓN
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update
+    const { connection } = update
 
     if (connection === 'open') {
       console.log('✅ Conectado a WhatsApp')
     }
-
-    if (connection === 'close') {
-      const reason = lastDisconnect?.error?.output?.statusCode
-      console.log('❌ Conexión cerrada:', reason)
-
-      if (reason !== DisconnectReason.loggedOut) {
-        startBot()
-      }
-    }
   })
 
-  // 🔑 GENERAR CÓDIGO DE EMPAREJAMIENTO
   if (!sock.authState.creds.registered) {
-    try {
-      const code = await sock.requestPairingCode(PHONE_NUMBER)
-      console.log('📲 Código de vinculación:', code)
-      console.log('👉 WhatsApp → Dispositivos vinculados → Vincular con número')
-    } catch (err) {
-      console.error('❌ Error generando código:', err.message)
-    }
+    setTimeout(async () => {
+      try {
+        const code = await sock.requestPairingCode(PHONE_NUMBER)
+        console.log('📲 Código de vinculación:', code)
+      } catch (err) {
+        console.error('❌ Error generando código:', err.message)
+      }
+    }, 5000)
   }
 
-  // 📩 MENSAJES
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0]
     if (!msg.message || msg.key.fromMe) return
@@ -101,9 +85,6 @@ async function startBot() {
     const text = getMessageText(msg)
     if (!text) return
 
-    console.log(`📩 ${from}: ${text}`)
-
-    await sock.sendPresenceUpdate('composing', from)
     const reply = await askAI(text)
     await sock.sendMessage(from, { text: reply })
   })
